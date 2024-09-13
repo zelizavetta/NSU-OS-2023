@@ -9,11 +9,9 @@ int main() {
 
   if (pid == -1) {
     perror("error in fork");
-    return 1;
+    exit(1);
   } else if (pid == 0) {
     execlp("cat", "cat", "lab9.c", NULL);
-    perror("error in execlp");
-    return 1;
   } else {
     wait(NULL);
     printf("\nI am here\n");
