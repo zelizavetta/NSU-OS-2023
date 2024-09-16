@@ -1,10 +1,26 @@
-all: 
-	gcc server.c -Wall -lc -o server
-	gcc proxy.c -Wall -lc -o proxy
-	gcc client.c -Wall -lc -o client
+CC = gcc
+CFLAGS = -c -Wall
+LFLAGS = -lsocket
 
-clean: 
-	rm -rf *o
-	rm server
-	rm client
-	rm proxy
+all: server client proxy
+
+server: server.o
+	$(CC) -o server server.o $(LFLAGS)
+
+server.o: server.c
+	$(CC) $(CFLAGS) server.c
+
+client: client.o
+	$(CC) -o client client.o $(LFLAGS)
+
+client.o: client.c
+	$(CC) $(CFLAGS) client.c
+
+proxy: proxy.o
+	$(CC) -o proxy proxy.o $(LFLAGS)
+
+proxy.o: proxy.c
+	$(CC) $(CFLAGS) proxy.c
+
+clean:
+	rm -f *.o server client proxy

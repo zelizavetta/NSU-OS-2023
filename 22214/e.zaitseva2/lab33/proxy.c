@@ -42,8 +42,7 @@ int connect_to_target(const char *host, int port) {
   return target_fd;
 }
 
-void handle_data_transfer(int source_fd, int dest_fd, fd_set *read_fds,
-                          fd_set *write_fds) {
+void handle_data_transfer(int source_fd, int dest_fd, fd_set *active_fds) {
   char buffer[BUFFER_SIZE];
   int bytes_read = recv(source_fd, buffer, sizeof(buffer), 0);
   if (bytes_read <= 0) {
@@ -54,26 +53,20 @@ void handle_data_transfer(int source_fd, int dest_fd, fd_set *read_fds,
     }
     close(source_fd);
     close(dest_fd);
-    FD_CLR(source_fd, read_fds);
-    FD_CLR(dest_fd, read_fds);
-    FD_CLR(source_fd, write_fds);
-    FD_CLR(dest_fd, write_fds);
+    FD_CLR(source_fd, active_fds);
+    FD_CLR(dest_fd, active_fds);
   } else {
     if (send(dest_fd, buffer, bytes_read, 0) < 0) {
       perror("send");
       close(source_fd);
       close(dest_fd);
-      FD_CLR(source_fd, read_fds);
-      FD_CLR(dest_fd, read_fds);
-      FD_CLR(source_fd, write_fds);
-      FD_CLR(dest_fd, write_fds);
+      FD_CLR(source_fd, active_fds);
+      FD_CLR(dest_fd, active_fds);
     }
   }
 }
 
 void remove_connection(Connection connections[], int *conn_count, int index) {
-  close(connections[index].client_fd);
-  close(connections[index].target_fd);
   int i;
   for (i = index; i < *conn_count - 1; i++) {
     connections[i] = connections[i + 1];
@@ -94,6 +87,7 @@ int main(int argc, char *argv[]) {
   int server_port = atoi(argv[3]);
   int proxy_fd, max_fd;
   struct sockaddr_in proxy_addr, client_addr;
+  struct timeval timeout;
   socklen_t client_len = sizeof(client_addr);
   fd_set read_fds, write_fds, active_fds;
   Connection connections[MAX_CONNECTIONS];
@@ -108,6 +102,8 @@ int main(int argc, char *argv[]) {
   proxy_addr.sin_family = AF_INET;
   proxy_addr.sin_addr.s_addr = INADDR_ANY;
   proxy_addr.sin_port = htons(proxy_port);
+
+  memset(&timeout, 0, sizeof(timeout));
 
   if (bind(proxy_fd, (struct sockaddr *)&proxy_addr, sizeof(proxy_addr)) < 0) {
     perror("bind");
@@ -131,7 +127,7 @@ int main(int argc, char *argv[]) {
     read_fds = active_fds;
     write_fds = active_fds;
 
-    if (select(max_fd + 1, &read_fds, &write_fds, NULL, NULL) < 0) {
+    if (select(max_fd + 1, &read_fds, NULL, NULL, NULL) < 0) {
       perror("select");
       break;
     }
@@ -164,22 +160,27 @@ int main(int argc, char *argv[]) {
         perror("accept");
       }
     }
+    if (select(max_fd + 1, NULL, &write_fds, NULL, &timeout) < 0) {
+      perror("select");
+      break;
+    }
     int i;
     for (i = 0; i < conn_count; i++) {
       int client_fd = connections[i].client_fd;
       int target_fd = connections[i].target_fd;
 
-      if (FD_ISSET(client_fd, &read_fds)) {
-        handle_data_transfer(client_fd, target_fd, &active_fds, &write_fds);
+      if (FD_ISSET(client_fd, &read_fds) && FD_ISSET(target_fd, &write_fds)) {
+        handle_data_transfer(client_fd, target_fd, &active_fds);
       }
 
-      if (FD_ISSET(target_fd, &read_fds)) {
-        handle_data_transfer(target_fd, client_fd, &active_fds, &write_fds);
+      if (FD_ISSET(target_fd, &read_fds) && FD_ISSET(client_fd, &write_fds)) {
+        handle_data_transfer(target_fd, client_fd, &active_fds);
       }
     }
     int j;
     for (j = 0; j < conn_count;) {
-      if (connections[j].client_fd == -1 || connections[j].target_fd == -1) {
+      if (!FD_ISSET(connections[j].client_fd, &active_fds) ||
+          !FD_ISSET(connections[j].target_fd, &active_fds)) {
         remove_connection(connections, &conn_count, j);
       } else {
         j++;
