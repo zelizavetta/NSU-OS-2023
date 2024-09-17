@@ -103,8 +103,6 @@ int main(int argc, char *argv[]) {
   proxy_addr.sin_addr.s_addr = INADDR_ANY;
   proxy_addr.sin_port = htons(proxy_port);
 
-  memset(&timeout, 0, sizeof(timeout));
-
   if (bind(proxy_fd, (struct sockaddr *)&proxy_addr, sizeof(proxy_addr)) < 0) {
     perror("bind");
     close(proxy_fd);
@@ -160,6 +158,7 @@ int main(int argc, char *argv[]) {
         perror("accept");
       }
     }
+    memset(&timeout, 0, sizeof(timeout));
     if (select(max_fd + 1, NULL, &write_fds, NULL, &timeout) < 0) {
       perror("select");
       break;
